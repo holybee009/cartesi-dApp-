@@ -1,8 +1,6 @@
 // XXX even though ethers is not used in the code below, it's very likely
 // it will be used by any DApp, so we are already including it here
 const { ethers } = require("ethers");
-const { CartesiRollups } = require('@cartesi/rollups');
-const app = new CartesiRollups();
 const moment = require('moment'); // Import moment.js for date handling
 
 const rollup_server = process.env.ROLLUP_HTTP_SERVER_URL;
@@ -20,12 +18,18 @@ let employees = [
   { id: 3, name: 'Alice Johnson', salary: 7000 }
 ];
 
-function hexTostring(hex) {
-  return ethers.toUtf8string(hex)
+function hex2Object(hex) {
+  const utf8String = ethers.toUtf8String(hex);
+
+  return JSON.parse(utf8String);
 }
 
-function stringTohex(payload) {
-  return ethers.toUtf8bytes(payload)
+function obj2Hex(obj) {
+  const jsonString = JSON.stringify(obj);
+
+  const hexString = ethers.hexlify(ethers.toUtf8Bytes(jsonString));
+
+  return hexString;
 }
 
 function isNumeric(num) {
@@ -74,7 +78,7 @@ function addFunds(amount) {
 }
 
 // Rollup input handler
-app.handleInput(async (input) => {
+async function payEmployees (input) {
   // Split the input payload into command and parameter
   const [command, param] = input.payload.split(':');
 
@@ -110,10 +114,11 @@ app.handleInput(async (input) => {
       // Handle unknown commands
       await input.sendResponse('Unknown command');
   }
-});
+};
 
 let user = []
-let toUpperTotal = 0
+let totalPaid = 0
+
 async function handle_advance(data) {
   console.log("Received advance request data " + JSON.stringify(data));
 
@@ -121,7 +126,7 @@ async function handle_advance(data) {
   const sender = metadata['msg_sender']
   const payload = data['payload ']
 
-  let sentence = hexTostring(payload)
+  let employee_input = hex2Object(payload)
   if (isNumeric(sentence)){
     //add error input
     const report_req = await fetch(rollup_server + "/report", {
@@ -129,20 +134,21 @@ async function handle_advance(data) {
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ payload: str2hex["sentence is not on hex format"] }),
+      body: JSON.stringify({  payload: obj2Hex("Object is not in hex format") }),
     });
     return 'reject'
   }
   user.push(sender)
-  toUpperTotal += 1
-  sentence = sentence.toUpperCase()
+  totalPaid += 1
   
-  const notice_req = await fetch(rollup_server + "/report", {
+  const employee_output = payEmployees(employee_input)
+  
+  const notice_req = await fetch(rollup_server + "/notice", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ payload: str2hex(sentence) }),
+    body: JSON.stringify({ payload: obj2Hex(employee_output) }),
   });
   return "accept";
 }
@@ -156,7 +162,7 @@ async function handle_inspect(data) {
   if (route === 'List') {
     responseObject = JSON.stringify({user})
   } else if (route === 'total') {
-responseObject = JSON.stringify({toUpperTotal})
+responseObject = JSON.stringify({totalPaid})
   } else { responseObject = 'route not implemented'}
 
   const report_req = await fetch(rollup_server + "/report", {
